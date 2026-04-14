@@ -14,7 +14,7 @@
   "dependencies": {
     "@hookform/resolvers": "3.9.0",
     "clsx": "2.0.0",
-    "date-fns": "3.6.0",
+    "date-fns": "4.1.0",
     "lucide-react": "0.453.0",
     "nanoid": "5.0.7",
     "next": "16.2.3",
