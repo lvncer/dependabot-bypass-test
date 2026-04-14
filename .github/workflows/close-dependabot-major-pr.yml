@@ -21,7 +21,7 @@ jobs:
 
       - name: Close major update PR
         if: steps.metadata.outputs.update-type == 'version-update:semver-major' && steps.metadata.outputs.dependency-group == ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { owner, repo } = context.repo;
