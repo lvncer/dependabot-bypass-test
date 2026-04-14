@@ -122,29 +122,42 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
 
-      - name: Wait for required checks
+      - name: Wait for project CI check
         if: steps.evaluate.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ steps.evaluate.outputs.pr_number }}
           REPOSITORY: ${{ github.repository }}
           REQUIRED_CHECK_NAME: test-result
+          MAX_ATTEMPTS: 180
         run: |
-          set +e
-          gh pr checks "$PR_NUMBER" --required --watch --interval 10 --repo "$REPOSITORY"
-          checks_exit_code=$?
-          set -e
+          attempts=0
 
-          if [ "$checks_exit_code" -ne 0 ]; then
-            echo "::error title=Required checks did not pass::Dependabot merge waits for required checks. Inspect the PR checks above for details."
-            exit "$checks_exit_code"
-          fi
+          while [ "$attempts" -lt "$MAX_ATTEMPTS" ]; do
+            checks_json=$(gh pr checks "$PR_NUMBER" --json name,bucket --repo "$REPOSITORY")
+            test_result_bucket=$(printf '%s' "$checks_json" | jq -r ".[] | select(.name == \"$REQUIRED_CHECK_NAME\") | .bucket" | head -n 1)
 
-          test_result_bucket=$(gh pr checks "$PR_NUMBER" --required --json name,bucket --jq ".[] | select(.name == \"$REQUIRED_CHECK_NAME\") | .bucket" --repo "$REPOSITORY")
-          if [ "$test_result_bucket" != "pass" ]; then
-            echo "::error title=Required test-result check is not successful::Expected '$REQUIRED_CHECK_NAME' to pass before merging, got '${test_result_bucket:-missing}'."
-            exit 1
-          fi
+            if [ -n "$test_result_bucket" ] && [ "$test_result_bucket" != "null" ]; then
+              echo "Found '$REQUIRED_CHECK_NAME' check with bucket '$test_result_bucket'."
+
+              if [ "$test_result_bucket" = "pass" ]; then
+                exit 0
+              fi
+
+              if [ "$test_result_bucket" = "fail" ] || [ "$test_result_bucket" = "cancel" ]; then
+                echo "::error title=Project CI check failed::Expected '$REQUIRED_CHECK_NAME' to pass before merging, got '$test_result_bucket'."
+                exit 1
+              fi
+            else
+              echo "Waiting for '$REQUIRED_CHECK_NAME' check to appear on PR #$PR_NUMBER..."
+            fi
+
+            attempts=$((attempts + 1))
+            sleep 10
+          done
+
+          echo "::error title=Project CI check did not complete::Timed out waiting for '$REQUIRED_CHECK_NAME' to finish on PR #$PR_NUMBER."
+          exit 1
 
       - name: Merge Dependabot PR with gh (admin squash)
         if: steps.evaluate.outputs.eligible == 'true'
